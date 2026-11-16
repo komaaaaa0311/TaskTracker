@@ -11,12 +11,18 @@ import {
   faXmark,
   faChevronLeft,
   faChevronRight,
+  faBell,
+  faBellSlash,
+  faThumbtack,
+  faMoon,
+  faSun,
 } from "@fortawesome/free-solid-svg-icons";
 import type { ChangeEvent } from "react";
 import type { Todo, TodoCategory } from "./types";
 import { initTodos } from "./initTodos";
 import WelcomeMessage from "./WelcomeMessage";
 import TodoList from "./TodoList";
+import TodoItem from "./TodoItem";
 import { v4 as uuid } from "uuid";
 import { twMerge } from "tailwind-merge";
 import dayjs from "dayjs";
@@ -24,8 +30,11 @@ import dayjs from "dayjs";
 const localStorageKey = "TodoApp";
 const userNameStorageKey = "TodoApp_UserName";
 const bgImageStorageKey = "TodoApp_BgImage";
+const reminderStorageKey = "TodoApp_ReminderEnabled";
+const notifiedStorageKey = "TodoApp_NotifiedKeys";
+const darkModeStorageKey = "TodoApp_DarkMode";
 
-// 1ページあたりの表示件数
+// 1ページあたりの表示件数（5行制限）
 const ITEMS_PER_PAGE = 5;
 
 const CATEGORIES: TodoCategory[] = [
@@ -79,6 +88,17 @@ const loadBgImage = (): string | null => {
   return localStorage.getItem(bgImageStorageKey);
 };
 
+const loadDarkMode = (): boolean => {
+  const saved = localStorage.getItem(darkModeStorageKey);
+  if (saved !== null) {
+    return saved === "true";
+  }
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches
+  );
+};
+
 const getTodoNameError = (name: string): string => {
   const trimmedName = name.trim();
   if (trimmedName.length < 2 || trimmedName.length > 32) {
@@ -130,6 +150,19 @@ const App = () => {
   const [userName, setUserName] = useState<string>(loadUserName);
   const [todos, setTodos] = useState<Todo[]>(loadTodos);
   const [bgImage, setBgImage] = useState<string | null>(loadBgImage);
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(loadDarkMode);
+
+  // リマインド通知用の状態
+  const [isReminderEnabled, setIsReminderEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      return false;
+    }
+    return (
+      Notification.permission === "granted" &&
+      localStorage.getItem(reminderStorageKey) === "true"
+    );
+  });
+  const [reminderBanner, setReminderBanner] = useState<string | null>(null);
 
   // 新規追加フォーム用 state
   const [newTodoName, setNewTodoName] = useState("");
@@ -156,9 +189,22 @@ const App = () => {
   const completedCount = todos.length - uncompletedCount;
   const overdueCount = todos.filter(isTodoOverdue).length;
 
+  // 期限切れ・24時間以内の未完了タスク（最上部固定枠用）
+  const urgentTodos = todos
+    .filter((todo) => {
+      if (todo.isDone || !todo.deadline) return false;
+      return dayjs(todo.deadline).diff(dayjs(), "hour", true) < 24;
+    })
+    .sort((a, b) => a.deadline!.getTime() - b.deadline!.getTime());
+
   const newTodoNameError = getTodoNameError(newTodoName);
   const isNewTodoNameInvalid = newTodoNameError !== "";
   const showNewTodoNameError = isNameTouched && isNewTodoNameInvalid;
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", isDarkMode);
+    localStorage.setItem(darkModeStorageKey, String(isDarkMode));
+  }, [isDarkMode]);
 
   useEffect(() => {
     localStorage.setItem(localStorageKey, JSON.stringify(todos));
@@ -176,9 +222,112 @@ const App = () => {
         localStorage.removeItem(bgImageStorageKey);
       }
     } catch {
-      alert("画像サイズが大きすぎるため保存できませんでした。別の画像をお試しください。");
+      alert(
+        "画像サイズが大きすぎるため保存できませんでした。別の画像をお試しください。",
+      );
     }
   }, [bgImage]);
+
+  // 期限15分前・期限到達時の自動チェック＆通知
+  useEffect(() => {
+    if (!isReminderEnabled) return;
+
+    const checkReminders = () => {
+      const now = Date.now();
+      let notifiedKeys: string[];
+      try {
+        notifiedKeys = JSON.parse(
+          localStorage.getItem(notifiedStorageKey) ?? "[]",
+        );
+      } catch {
+        notifiedKeys = [];
+      }
+      const notifiedSet = new Set(notifiedKeys);
+      let updated = false;
+
+      todos.forEach((todo) => {
+        if (todo.isDone || !todo.deadline) return;
+
+        const deadlineMs = todo.deadline.getTime();
+        const diffMinutes = (deadlineMs - now) / (1000 * 60);
+
+        // 1. 期限15分前通知
+        if (diffMinutes > 0 && diffMinutes <= 15) {
+          const key = `${todo.id}_${deadlineMs}_soon`;
+          if (!notifiedSet.has(key)) {
+            const msg = `まもなく期限です（残り約${Math.ceil(diffMinutes)}分）: ${todo.name}`;
+            if (
+              "Notification" in window &&
+              Notification.permission === "granted"
+            ) {
+              new Notification("TaskTracker リマインダー", { body: msg });
+            }
+            setReminderBanner(msg);
+            notifiedSet.add(key);
+            updated = true;
+          }
+        }
+
+        // 2. 期限到達通知（期限を過ぎて1時間以内）
+        if (diffMinutes <= 0 && diffMinutes >= -60) {
+          const key = `${todo.id}_${deadlineMs}_overdue`;
+          if (!notifiedSet.has(key)) {
+            const msg = `期限を過ぎました！: ${todo.name}`;
+            if (
+              "Notification" in window &&
+              Notification.permission === "granted"
+            ) {
+              new Notification("TaskTracker 期限アラート", { body: msg });
+            }
+            setReminderBanner(msg);
+            notifiedSet.add(key);
+            updated = true;
+          }
+        }
+      });
+
+      if (updated) {
+        localStorage.setItem(
+          notifiedStorageKey,
+          JSON.stringify(Array.from(notifiedSet).slice(-100)),
+        );
+      }
+    };
+
+    checkReminders();
+    const timerId = window.setInterval(checkReminders, 15000);
+    return () => window.clearInterval(timerId);
+  }, [todos, isReminderEnabled]);
+
+  const toggleReminder = async () => {
+    if (!("Notification" in window)) {
+      alert("このブラウザはデスクトップ通知に対応していません。");
+      return;
+    }
+
+    if (isReminderEnabled) {
+      setIsReminderEnabled(false);
+      localStorage.setItem(reminderStorageKey, "false");
+      return;
+    }
+
+    let permission = Notification.permission;
+    if (permission === "default") {
+      permission = await Notification.requestPermission();
+    }
+
+    if (permission === "granted") {
+      setIsReminderEnabled(true);
+      localStorage.setItem(reminderStorageKey, "true");
+      new Notification("TaskTracker", {
+        body: "リマインド通知をONにしました。期限15分前と期限到達時にお知らせします。",
+      });
+    } else {
+      alert(
+        "ブラウザの通知がブロックされています。ブラウザの設定から通知を許可してください。",
+      );
+    }
+  };
 
   const handleBgImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -371,7 +520,7 @@ const App = () => {
     });
   })();
 
-  // ページネーション計算（1ページ10件）
+  // ページネーション計算（1ページ5件）
   const totalPages = Math.max(
     1,
     Math.ceil(visibleTodos.length / ITEMS_PER_PAGE),
@@ -383,6 +532,7 @@ const App = () => {
     startIndex + ITEMS_PER_PAGE,
   );
 
+  // 表示中のタスク一括完了
   const uncompletedInPageCount = paginatedTodos.filter(
     (todo) => !todo.isDone,
   ).length;
@@ -399,23 +549,65 @@ const App = () => {
   return (
     <div
       style={bgImage ? { backgroundImage: `url(${bgImage})` } : undefined}
-      className="min-h-screen w-full bg-cover bg-fixed bg-center px-4 py-10"
+      className="min-h-screen w-full bg-slate-50 bg-cover bg-fixed bg-center px-4 py-10 text-slate-800 transition-colors dark:bg-slate-950 dark:text-slate-100"
     >
       <div
         className={twMerge(
           "mx-auto max-w-2xl",
-          bgImage && "rounded-xl bg-white/85 p-6 shadow-lg backdrop-blur-sm",
+          bgImage &&
+            "rounded-xl bg-white/10 p-6 shadow-lg backdrop-blur-sm dark:bg-slate-900/85",
         )}
       >
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-2xl font-bold">TaskTracker</h1>
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {/* ダークモード切り替えボタン */}
+            <button
+              type="button"
+              onClick={() => setIsDarkMode((prev) => !prev)}
+              aria-label={
+                isDarkMode
+                  ? "ライトモードに切り替え"
+                  : "ダークモードに切り替え"
+              }
+              className={twMerge(
+                "cursor-pointer rounded-md border px-2.5 py-1 text-xs font-medium transition",
+                isDarkMode
+                  ? "border-amber-400/50 bg-slate-800 text-amber-300 hover:bg-slate-700"
+                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100",
+              )}
+            >
+              <FontAwesomeIcon
+                icon={isDarkMode ? faSun : faMoon}
+                className="mr-1"
+              />
+              {isDarkMode ? "ライト" : "ダーク"}
+            </button>
+
+            {/* リマインド通知ボタン */}
+            <button
+              type="button"
+              onClick={toggleReminder}
+              className={twMerge(
+                "cursor-pointer rounded-md border px-2.5 py-1 text-xs font-medium transition",
+                isReminderEnabled
+                  ? "border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-500/50 dark:bg-indigo-950 dark:text-indigo-300 dark:hover:bg-indigo-900"
+                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700",
+              )}
+            >
+              <FontAwesomeIcon
+                icon={isReminderEnabled ? faBell : faBellSlash}
+                className="mr-1"
+              />
+              {isReminderEnabled ? "通知ON" : "通知OFF"}
+            </button>
+
             {/* 背景画像設定・リセットボタン */}
             <button
               type="button"
               onClick={() => bgInputRef.current?.click()}
-              className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
             >
               <FontAwesomeIcon icon={faImage} className="mr-1" />
               背景画像
@@ -425,7 +617,7 @@ const App = () => {
                 type="button"
                 onClick={() => setBgImage(null)}
                 title="背景画像をリセット"
-                className="cursor-pointer rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50"
+                className="cursor-pointer rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:border-slate-600 dark:bg-slate-800 dark:text-rose-400 dark:hover:bg-rose-950"
               >
                 <FontAwesomeIcon icon={faXmark} className="mr-1" />
                 背景解除
@@ -443,7 +635,7 @@ const App = () => {
             <button
               type="button"
               onClick={handleExportJson}
-              className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
             >
               <FontAwesomeIcon icon={faDownload} className="mr-1" />
               保存(JSON)
@@ -451,7 +643,7 @@ const App = () => {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
             >
               <FontAwesomeIcon icon={faUpload} className="mr-1" />
               復元(JSON)
@@ -474,8 +666,61 @@ const App = () => {
           />
         </div>
 
+        {/* リマインド通知バナー */}
+        {reminderBanner && (
+          <div
+            role="alert"
+            className="mb-4 flex items-center justify-between gap-2 rounded-md border border-amber-400 bg-amber-100 px-3 py-2 text-sm font-bold text-amber-900 shadow-sm dark:border-amber-500/60 dark:bg-amber-950/90 dark:text-amber-200"
+          >
+            <div className="flex items-center gap-2">
+              <FontAwesomeIcon
+                icon={faBell}
+                className="text-amber-600 dark:text-amber-400"
+              />
+              <span>{reminderBanner}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReminderBanner(null)}
+              aria-label="通知を閉じる"
+              className="cursor-pointer rounded p-1 text-amber-700 hover:bg-amber-200 dark:text-amber-300 dark:hover:bg-amber-900"
+            >
+              <FontAwesomeIcon icon={faXmark} />
+            </button>
+          </div>
+        )}
+
+        {/* 期限切れ・24時間以内の最上部固定枠 */}
+        {urgentTodos.length > 0 && (
+          <section
+            aria-label="期限切れ・期限間近のタスク"
+            className="mb-4 space-y-2 rounded-lg border-2 border-red-300 bg-red-50/85 p-3 shadow-sm dark:border-red-500/50 dark:bg-red-950/50"
+          >
+            <div className="flex items-center justify-between text-xs font-bold text-red-700 dark:text-red-300">
+              <span className="flex items-center gap-1.5">
+                <FontAwesomeIcon icon={faThumbtack} />
+                <span>期限切れ・24時間以内のタスク（要対応）</span>
+              </span>
+              <span className="rounded-full bg-red-600 px-2 py-0.5 text-white">
+                {urgentTodos.length}件
+              </span>
+            </div>
+            <div className="flex flex-col gap-2">
+              {urgentTodos.map((todo) => (
+                <TodoItem
+                  key={`urgent-${todo.id}`}
+                  todo={todo}
+                  updateIsDone={updateIsDone}
+                  updateTodo={updateTodo}
+                  remove={remove}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* 検索・絞り込み・並び替えバー */}
-        <div className="mb-4 space-y-2 rounded-md border border-slate-200 bg-slate-50/90 p-3">
+        <div className="mb-4 space-y-2 rounded-md border border-slate-200 bg-slate-100/90 p-3 dark:border-slate-700 dark:bg-slate-800/90">
           <div className="relative">
             <FontAwesomeIcon
               icon={faMagnifyingGlass}
@@ -489,13 +734,13 @@ const App = () => {
                 setCurrentPage(1);
               }}
               placeholder="タスク名で検索..."
-              className="w-full rounded-md border border-slate-300 bg-white py-1.5 pr-3 pl-9 text-sm"
+              className="w-full rounded-md border border-slate-300 bg-white py-1.5 pr-3 pl-9 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:placeholder-slate-400"
             />
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             {/* ステータス切り替えタブ */}
-            <div className="inline-flex rounded-md border border-slate-300 bg-white p-0.5 text-xs font-medium">
+            <div className="inline-flex rounded-md border border-slate-300 bg-white p-0.5 text-xs font-medium dark:border-slate-600 dark:bg-slate-700">
               {(
                 [
                   { key: "all", label: `すべて (${todos.length})` },
@@ -514,7 +759,7 @@ const App = () => {
                     "cursor-pointer rounded px-2.5 py-1 transition",
                     filterStatus === tab.key
                       ? "bg-indigo-500 text-white"
-                      : "text-slate-600 hover:bg-slate-100",
+                      : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-600",
                   )}
                 >
                   {tab.label}
@@ -530,7 +775,7 @@ const App = () => {
                   setFilterCategory(e.target.value as TodoCategory | "all");
                   setCurrentPage(1);
                 }}
-                className="rounded-md border border-slate-300 bg-white px-2 py-1.5"
+                className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
               >
                 <option value="all">全カテゴリ</option>
                 {CATEGORIES.map((cat) => (
@@ -546,7 +791,7 @@ const App = () => {
                 onChange={(e) =>
                   handleSortOrderChange(e.target.value as SortOrder)
                 }
-                className="rounded-md border border-slate-300 bg-white px-2 py-1.5"
+                className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
               >
                 <option value="created">登録順</option>
                 <option value="deadline">期限順</option>
@@ -564,7 +809,7 @@ const App = () => {
                     ? "現在昇順（クリックで降順に変更）"
                     : "現在降順（クリックで昇順に変更）"
                 }
-                className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 font-medium text-slate-700 hover:bg-slate-100"
+                className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
               >
                 <FontAwesomeIcon
                   icon={sortDirection === "asc" ? faArrowUp : faArrowDown}
@@ -575,7 +820,7 @@ const App = () => {
           </div>
         </div>
 
-        {/* タスク一覧（1ページあたり最大10件） */}
+        {/* タスク一覧（1ページあたり最大5件） */}
         <TodoList
           todos={paginatedTodos}
           totalCount={todos.length}
@@ -584,10 +829,10 @@ const App = () => {
           remove={remove}
         />
 
-        {/* ページネーションコントロール（11件以上のときに表示） */}
+        {/* ページネーションコントロール（6件以上のときに表示） */}
         {totalPages > 1 && (
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-white/90 px-3 py-2 text-xs">
-            <span className="text-slate-600">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-white/90 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800/90">
+            <span className="text-slate-600 dark:text-slate-300">
               全 <strong>{visibleTodos.length}</strong> 件中{" "}
               <strong>{startIndex + 1}</strong>〜
               <strong>
@@ -603,7 +848,7 @@ const App = () => {
                   setCurrentPage((p) => Math.max(1, safeCurrentPage - 1))
                 }
                 disabled={safeCurrentPage <= 1}
-                className="cursor-pointer rounded border border-slate-300 bg-white px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                className="cursor-pointer rounded border border-slate-300 bg-white px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
               >
                 <FontAwesomeIcon icon={faChevronLeft} className="mr-1" />
                 前へ
@@ -619,7 +864,7 @@ const App = () => {
                       "cursor-pointer rounded border px-2.5 py-1 font-bold",
                       page === safeCurrentPage
                         ? "border-indigo-500 bg-indigo-500 text-white"
-                        : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100",
+                        : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600",
                     )}
                   >
                     {page}
@@ -635,7 +880,7 @@ const App = () => {
                   )
                 }
                 disabled={safeCurrentPage >= totalPages}
-                className="cursor-pointer rounded border border-slate-300 bg-white px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                className="cursor-pointer rounded border border-slate-300 bg-white px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
               >
                 次へ
                 <FontAwesomeIcon icon={faChevronRight} className="ml-1" />
@@ -644,6 +889,7 @@ const App = () => {
           </div>
         )}
 
+        {/* 一括操作ボタン */}
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -657,6 +903,7 @@ const App = () => {
           >
             表示中のタスクを完了 ({uncompletedInPageCount})
           </button>
+
           <button
             type="button"
             onClick={removeCompletedTodos}
@@ -684,13 +931,14 @@ const App = () => {
           </button>
         </div>
 
+        {/* 新規タスク追加フォーム */}
         <form
           onSubmit={(e) => {
             e.preventDefault();
             addNewTodo();
           }}
           aria-labelledby="newTodoHeading"
-          className="mt-4 space-y-3 rounded-md border border-slate-300 bg-white p-4 drop-shadow"
+          className="mt-4 space-y-3 rounded-md border border-slate-300 bg-white p-4 drop-shadow dark:border-slate-700 dark:bg-slate-800"
         >
           <h2 id="newTodoHeading" className="text-lg font-bold">
             新しいタスクの追加
@@ -713,8 +961,9 @@ const App = () => {
                   showNewTodoNameError ? "newTodoNameError" : undefined
                 }
                 className={twMerge(
-                  "min-w-0 grow rounded-md border border-gray-300 p-2",
-                  showNewTodoNameError && "border-red-500 outline-red-500",
+                  "min-w-0 grow rounded-md border border-gray-300 bg-white p-2 text-slate-800 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:placeholder-slate-400",
+                  showNewTodoNameError &&
+                    "border-red-500 outline-red-500 dark:border-red-400",
                 )}
                 placeholder="2文字以上、32文字以内で入力してください"
               />
@@ -723,7 +972,7 @@ const App = () => {
               <div
                 id="newTodoNameError"
                 aria-live="polite"
-                className="mt-1 ml-10 flex items-center space-x-1 text-sm font-medium text-red-500"
+                className="mt-1 ml-10 flex items-center space-x-1 text-sm font-medium text-red-500 dark:text-red-400"
               >
                 <FontAwesomeIcon
                   icon={faTriangleExclamation}
@@ -744,7 +993,7 @@ const App = () => {
               onChange={(e) =>
                 setNewTodoCategory(e.target.value as TodoCategory)
               }
-              className="rounded-md border border-gray-300 bg-white px-2.5 py-1"
+              className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-slate-800 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
             >
               {CATEGORIES.map((cat) => (
                 <option key={cat} value={cat}>
@@ -787,7 +1036,7 @@ const App = () => {
                   : ""
               }
               onChange={updateDeadline}
-              className="max-w-full min-w-0 rounded-md border border-gray-300 px-2 py-0.5"
+              className="max-w-full min-w-0 rounded-md border border-gray-300 bg-white px-2 py-0.5 text-slate-800 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:[color-scheme:dark]"
             />
           </div>
 

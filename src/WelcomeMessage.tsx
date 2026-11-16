@@ -30,7 +30,7 @@ const WelcomeMessage = (props: Props) => {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 text-blue-700">
+    <div className="flex flex-wrap items-center gap-2 text-blue-700 dark:text-blue-300">
       <span>{greeting}、</span>
       {isEditing ? (
         <span className="inline-flex items-center gap-1">
@@ -43,7 +43,7 @@ const WelcomeMessage = (props: Props) => {
               if (e.key === "Enter") handleSave();
               if (e.key === "Escape") handleCancel();
             }}
-            className="w-36 rounded border border-blue-400 bg-white px-2 py-0.5 text-sm text-slate-800"
+            className="w-36 rounded border border-blue-400 bg-white px-2 py-0.5 text-sm text-slate-800 dark:border-blue-500 dark:bg-slate-800 dark:text-slate-100"
             autoFocus
           />
           <button
@@ -58,7 +58,7 @@ const WelcomeMessage = (props: Props) => {
             type="button"
             onClick={handleCancel}
             aria-label="キャンセル"
-            className="cursor-pointer rounded bg-slate-400 px-2 py-0.5 text-xs text-white hover:bg-slate-500"
+            className="cursor-pointer rounded bg-slate-400 px-2 py-0.5 text-xs text-white hover:bg-slate-500 dark:bg-slate-600 dark:hover:bg-slate-500"
           >
             <FontAwesomeIcon icon={faXmark} />
           </button>
@@ -74,7 +74,7 @@ const WelcomeMessage = (props: Props) => {
             }}
             aria-label="ユーザー名を編集"
             title="名前を変更"
-            className="cursor-pointer rounded p-1 text-xs text-blue-500 hover:bg-blue-100 hover:text-blue-700"
+            className="cursor-pointer rounded p-1 text-xs text-blue-500 hover:bg-blue-100 hover:text-blue-700 dark:text-blue-400 dark:hover:bg-slate-800 dark:hover:text-blue-300"
           >
             <FontAwesomeIcon icon={faPen} />
           </button>

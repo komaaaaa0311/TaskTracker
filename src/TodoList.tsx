@@ -18,20 +18,14 @@ type Props = {
 };
 
 const TodoList = (props: Props) => {
-  const { todos, totalCount } = props;
-
-  if (totalCount === 0) {
-    return (
-      <div className="rounded-md border border-dashed border-slate-300 p-4 text-center text-red-500">
-        現在、登録されているタスクはありません。
-      </div>
-    );
-  }
+  const { todos, totalCount, updateIsDone, updateTodo, remove } = props;
 
   if (todos.length === 0) {
     return (
-      <div className="rounded-md border border-dashed border-slate-300 p-4 text-center text-slate-500">
-        条件に一致するタスクが見つかりませんでした。
+      <div className="rounded-md border border-slate-200 bg-white/90 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-400">
+        {totalCount === 0
+          ? "現在、登録されているタスクはありません。"
+          : "条件に一致するタスクがありません。"}
       </div>
     );
   }
@@ -42,9 +36,9 @@ const TodoList = (props: Props) => {
         <TodoItem
           key={todo.id}
           todo={todo}
-          updateIsDone={props.updateIsDone}
-          updateTodo={props.updateTodo}
-          remove={props.remove}
+          updateIsDone={updateIsDone}
+          updateTodo={updateTodo}
+          remove={remove}
         />
       ))}
     </div>
