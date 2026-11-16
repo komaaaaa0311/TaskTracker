@@ -1,5 +1,6 @@
 # アプリ概要
-Todoアプリ「TaskTracker」のURL：[text](https://komaaaaa0311.github.io/react-todo-app/)
+Todoアプリ「TaskTracker」のURL：[https://komaaaaa0311.github.io/react-todo-app/](https://komaaaaa0311.github.io/react-todo-app/)
+
 React、TypeScript、Tailwind CSS を使用し、ローカルストレージでデータを永続化したTodoアプリ「TaskTracker」です。Githubを利用し、Github Pagesとしてデプロイしより多くの人にも使っていただけるwebアプリです。
 
 # 使い方
