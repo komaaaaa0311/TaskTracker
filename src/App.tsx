@@ -34,7 +34,7 @@ const reminderStorageKey = "TodoApp_ReminderEnabled";
 const notifiedStorageKey = "TodoApp_NotifiedKeys";
 const darkModeStorageKey = "TodoApp_DarkMode";
 
-// 1ページあたりの表示件数（5行制限）
+// 1ページあたりの表示件数
 const ITEMS_PER_PAGE = 5;
 
 const CATEGORIES: TodoCategory[] = [
@@ -107,7 +107,7 @@ const getTodoNameError = (name: string): string => {
   return "";
 };
 
-// localStorageの容量制限に収まるよう画像をリサイズ・圧縮する関数
+// localStorageの容量制限に収まるよう画像をリサイズ
 const compressImageToDataUrl = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -152,7 +152,7 @@ const App = () => {
   const [bgImage, setBgImage] = useState<string | null>(loadBgImage);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(loadDarkMode);
 
-  // リマインド通知用の状態
+  // リマインド通知
   const [isReminderEnabled, setIsReminderEnabled] = useState<boolean>(() => {
     if (typeof window === "undefined" || !("Notification" in window)) {
       return false;
@@ -164,15 +164,12 @@ const App = () => {
   });
   const [reminderBanner, setReminderBanner] = useState<string | null>(null);
 
-  // 新規追加フォーム用 state
   const [newTodoName, setNewTodoName] = useState("");
   const [newTodoPriority, setNewTodoPriority] = useState(3);
   const [newTodoDeadline, setNewTodoDeadline] = useState<Date | null>(null);
   const [newTodoCategory, setNewTodoCategory] =
     useState<TodoCategory>("学校・仕事");
   const [isNameTouched, setIsNameTouched] = useState(false);
-
-  // 検索・絞り込み・並び替え・ページング用 state
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [filterCategory, setFilterCategory] = useState<TodoCategory | "all">(
@@ -189,7 +186,7 @@ const App = () => {
   const completedCount = todos.length - uncompletedCount;
   const overdueCount = todos.filter(isTodoOverdue).length;
 
-  // 期限切れ・24時間以内の未完了タスク（最上部固定枠用）
+  // 期限切れ・24時間以内の未完了タスクの最上部表示
   const urgentTodos = todos
     .filter((todo) => {
       if (todo.isDone || !todo.deadline) return false;
@@ -228,7 +225,7 @@ const App = () => {
     }
   }, [bgImage]);
 
-  // 期限15分前・期限到達時の自動チェック＆通知
+  // 期限15分前・期限の自動チェック＆通知
   useEffect(() => {
     if (!isReminderEnabled) return;
 
@@ -268,11 +265,11 @@ const App = () => {
           }
         }
 
-        // 2. 期限到達通知（期限を過ぎて1時間以内）
+        // 2. 期限切れ通知（期限を過ぎて1時間以内）
         if (diffMinutes <= 0 && diffMinutes >= -60) {
           const key = `${todo.id}_${deadlineMs}_overdue`;
           if (!notifiedSet.has(key)) {
-            const msg = `期限を過ぎました！: ${todo.name}`;
+            const msg = `【重要】 ${todo.name}の期限が過ぎました！`;
             if (
               "Notification" in window &&
               Notification.permission === "granted"
@@ -427,7 +424,7 @@ const App = () => {
     }
   };
 
-  // JSON エクスポート（バックアップ保存）
+  // JSONのバックアップ保存
   const handleExportJson = () => {
     const blob = new Blob([JSON.stringify(todos, null, 2)], {
       type: "application/json",
@@ -440,7 +437,7 @@ const App = () => {
     URL.revokeObjectURL(url);
   };
 
-  // JSON インポート（バックアップ復元）
+  // JSONのバックアップ復元
   const handleImportJson = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -481,7 +478,7 @@ const App = () => {
     reader.readAsText(file);
   };
 
-  // 絞り込みと並び替えを適用した表示用リスト
+  // 絞り込みと並び替え
   const filteredTodos = todos.filter((todo) => {
     if (filterStatus === "active" && todo.isDone) return false;
     if (filterStatus === "completed" && !todo.isDone) return false;
@@ -520,7 +517,6 @@ const App = () => {
     });
   })();
 
-  // ページネーション計算（1ページ5件）
   const totalPages = Math.max(
     1,
     Math.ceil(visibleTodos.length / ITEMS_PER_PAGE),
@@ -532,7 +528,7 @@ const App = () => {
     startIndex + ITEMS_PER_PAGE,
   );
 
-  // 表示中のタスク一括完了
+  // タスクの一括完了
   const uncompletedInPageCount = paginatedTodos.filter(
     (todo) => !todo.isDone,
   ).length;
@@ -638,7 +634,7 @@ const App = () => {
               className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
             >
               <FontAwesomeIcon icon={faDownload} className="mr-1" />
-              保存(JSON)
+              履歴保存(JSON)
             </button>
             <button
               type="button"
@@ -646,7 +642,7 @@ const App = () => {
               className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
             >
               <FontAwesomeIcon icon={faUpload} className="mr-1" />
-              復元(JSON)
+              履歴復元(JSON)
             </button>
             <input
               ref={fileInputRef}
