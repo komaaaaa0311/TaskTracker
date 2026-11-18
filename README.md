@@ -1,6 +1,6 @@
 # アプリ概要
 
-Todoアプリ「TaskTracker」のURL：[https://komaaaaa0311.github.io/react-todo-app/](https://komaaaaa0311.github.io/react-todo-app/)
+Todoアプリ「TaskTracker」のURL：[https://komaaaaa0311.github.io/TaskTracker/](https://komaaaaa0311.github.io/react-todo-app/)
 
 TaskTrackerは、日常生活のタスクを効率よく管理するためのTodoアプリです。
 
