@@ -3,8 +3,6 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faTriangleExclamation,
   faMagnifyingGlass,
-  faDownload,
-  faUpload,
   faArrowUp,
   faArrowDown,
   faImage,
@@ -179,7 +177,6 @@ const App = () => {
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [currentPage, setCurrentPage] = useState(1);
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const bgInputRef = useRef<HTMLInputElement | null>(null);
 
   const uncompletedCount = todos.filter((todo) => !todo.isDone).length;
@@ -424,60 +421,6 @@ const App = () => {
     }
   };
 
-  // JSONのバックアップ保存
-  const handleExportJson = () => {
-    const blob = new Blob([JSON.stringify(todos, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `todo-backup-${dayjs().format("YYYYMMDD-HHmm")}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // JSONのバックアップ復元
-  const handleImportJson = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed = JSON.parse(String(reader.result));
-        if (!Array.isArray(parsed)) {
-          alert("無効なバックアップファイルです。");
-          return;
-        }
-        const restored: Todo[] = parsed.map((item: StoredTodo) => ({
-          id: typeof item.id === "string" ? item.id : uuid(),
-          name: String(item.name ?? "無題のタスク").slice(0, 32),
-          isDone: Boolean(item.isDone),
-          priority:
-            typeof item.priority === "number" &&
-            [1, 2, 3].includes(item.priority)
-              ? item.priority
-              : 2,
-          deadline: item.deadline ? new Date(item.deadline) : null,
-          category:
-            item.category && CATEGORIES.includes(item.category)
-              ? item.category
-              : "その他",
-        }));
-        setTodos(restored);
-        setCurrentPage(1);
-      } catch {
-        alert("JSONファイルの読み込みに失敗しました。");
-      } finally {
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
-        }
-      }
-    };
-    reader.readAsText(file);
-  };
-
   // 絞り込みと並び替え
   const filteredTodos = todos.filter((todo) => {
     if (filterStatus === "active" && todo.isDone) return false;
@@ -624,31 +567,6 @@ const App = () => {
               type="file"
               accept="image/*"
               onChange={handleBgImageUpload}
-              className="hidden"
-            />
-
-            {/* JSON保存・復元ボタン */}
-            <button
-              type="button"
-              onClick={handleExportJson}
-              className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-            >
-              <FontAwesomeIcon icon={faDownload} className="mr-1" />
-              履歴保存(JSON)
-            </button>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-            >
-              <FontAwesomeIcon icon={faUpload} className="mr-1" />
-              履歴復元(JSON)
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json,application/json"
-              onChange={handleImportJson}
               className="hidden"
             />
           </div>
